@@ -47,17 +47,17 @@ void http_server(void *clients);
 #define COUNT_OF(x) ((sizeof(x)/sizeof(0[x])) / ((size_t)(!(sizeof(x) % sizeof(0[x])))))
 
 void espPinMode(int pinNum, int pinDir) {
-	if (pinNum == 32 || pinNum == 33) {
-		uint64_t gpioBitMask = (pinNum == 32) ? 1ULL<<GPIO_NUM_32 : 1ULL<<GPIO_NUM_33;
-		gpio_mode_t gpioMode = (pinDir == OUTPUT) ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT;
-		gpio_config_t io_conf;
-		io_conf.intr_type = GPIO_INTR_DISABLE;
-		io_conf.mode = gpioMode;
-		io_conf.pin_bit_mask = gpioBitMask;
-		io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-		io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-		gpio_config(&io_conf);
-	} else pinMode(pinNum, pinDir);
+    if (pinNum == 32 || pinNum == 33) {
+        uint64_t gpioBitMask = (pinNum == 32) ? 1ULL<<GPIO_NUM_32 : 1ULL<<GPIO_NUM_33;
+        gpio_mode_t gpioMode = (pinDir == OUTPUT) ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT;
+        gpio_config_t io_conf;
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        io_conf.mode = gpioMode;
+        io_conf.pin_bit_mask = gpioBitMask;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        gpio_config(&io_conf);
+    } else pinMode(pinNum, pinDir);
 }
 
 void gpioSetup(int gpioNum, int gpioMode, int gpioVal) {
@@ -109,34 +109,40 @@ JsonObject& read_wifi(){
     return jsonBuffer.parseObject(line);
 }
 
-void Config_wifi(const char *wifiname, const char *psw) {
-    for (size_t ii = 0; ii <= 10; ii++)
-    {
-        int i = 0;
-        Serial.printf("Configuring network SSID:%s Password:%s\n",wifiname,psw);
-        WiFi.begin(wifiname, psw);
-        while (WiFi.status() != WL_CONNECTED){
-            digitalWrite (B, 1);
-            delay(100);
-            digitalWrite (B, 0);
-            delay(400);
-            Serial.print(".");
-            i++;
-            if (i == 10){
-                Serial.println("Failed to connect");
-                break;
-            }
-        }
-        if (WiFi.isConnected()){
-            Serial.println("Network connection successful");
-            Serial.print("Local IP:");
-            Serial.println(WiFi.localIP());
+bool Config_wifi(const char *wifiname, const char *psw) {
+    
+    // for (size_t ii = 0; ii <= 10; ii++){}
+
+    int i = 0;
+    Serial.printf("Configuring network SSID:%s Password:%s\n",wifiname,psw);
+    WiFi.begin(wifiname, psw);
+    while (WiFi.status() != WL_CONNECTED){
+        digitalWrite (B, 1);
+        delay(100);
+        digitalWrite (B, 0);
+        delay(400);
+        Serial.print(".");
+        i++;
+        if (i == 20){
+            Serial.println("Failed to connect");
             break;
         }
     }
-    if (!WiFi.isConnected()){
-        flag = true;
+    if (WiFi.isConnected()){
+        Serial.println("Network connection successful");
+        Serial.print("Local IP:");
+        Serial.println(WiFi.localIP());
+        // break;
+        return true;
+    }else{
+        Serial.println("Connection ERROR restart");
+        ESP.restart();
+        // return Config_wifi(wifiname, psw);
     }
+
+    // if (!WiFi.isConnected()){
+    //     flag = true;
+    // }
     
 }
 
@@ -173,9 +179,11 @@ void smartConfig(){
 void setup(){
 
     Serial.begin(115200);
-
-	pinMode(relay_gpio, OUTPUT);
-    digitalWrite(relay_gpio, HIGH);
+    //初始化按钮
+    pinMode(21, INPUT_PULLUP);
+    pinMode(relay_gpio, OUTPUT);
+    // digitalWrite(relay_gpio, HIGH);??HIGH or LOW??
+    digitalWrite(relay_gpio, LOW);
 
     digitalLeds_initDriver();
     // Init unused outputs low to reduce noise
@@ -191,9 +199,19 @@ void setup(){
     digitalLeds_resetPixels(STRANDS, STRANDCNT);
 
     chipid=ESP.getEfuseMac();
+    delay(2000);
     Serial.printf("chipid is :%04X-%08X\n",(uint16_t)(chipid>>32),(uint32_t)chipid);
 
     flag = false;
+
+    for (size_t ii = 0; ii <= 50; ii++){
+        if(!flag and digitalRead(21) == LOW){
+            flag = true;
+            smartConfig();
+            break;
+        }
+        delay(100);
+    }
 
     JsonObject& data = read_wifi();
 
@@ -201,27 +219,38 @@ void setup(){
     String password = data["password"];
 
     Config_wifi(ssid.c_str(), password.c_str());
-    if (flag){
-        smartConfig();
-    }
 
-	xTaskCreatePinnedToCore(hb_server,  "hb_server",  2048, NULL, 2 ,  NULL, 1);
-	xTaskCreatePinnedToCore(http_server,  "http_server",  2048, NULL, 1 ,  NULL, 1);
+    // if(){
+        
+    // }
+    // if (flag){
+    //     smartConfig();
+    // }
+
+    xTaskCreatePinnedToCore(hb_server,  "hb_server",  2048, NULL, 2 ,  NULL, 1);
+    xTaskCreatePinnedToCore(http_server,  "http_server",  2048, NULL, 1 ,  NULL, 1);
+
+    digitalWrite(relay_gpio, HIGH);
+    delay(500);
+    digitalWrite(relay_gpio, LOW);
 
     digitalWrite (G, 1);
-	colorWipe(pixelFromRGB(255, 0, 0),lednum);
-	colorWipe(pixelFromRGB(0, 255, 0),lednum);
-	colorWipe(pixelFromRGB(0, 0, 255),lednum);
+    colorWipe(pixelFromRGB(255, 0, 0),lednum);
+    colorWipe(pixelFromRGB(0, 255, 0),lednum);
+    colorWipe(pixelFromRGB(0, 0, 255),lednum);
+    delay(2000);
+    digitalLeds_resetPixels(STRANDS, STRANDCNT);
+
     digitalWrite (G, 0);
 }
 
 
 void loop(){
-	if(reset==1){
-		reset=0;
-		digitalLeds_resetPixels(STRANDS, STRANDCNT);
-	}
-	rainbowCycle(lednum);
+    if(reset==1){
+        reset=0;
+        digitalLeds_resetPixels(STRANDS, STRANDCNT);
+    }
+    rainbowCycle(lednum);
 
     if(WiFi.status() != WL_CONNECTED) {
         digitalWrite (R, 1);
@@ -238,41 +267,40 @@ void loop(){
 }
 
 void colorWipe(pixelColor_t c,int lednums) {
-	for(uint16_t i=0; i<lednums; i++) {
-		digitalLeds_resetPixels(STRANDS, STRANDCNT);
-		STRANDS[0]->pixels[i] = c;
-    	digitalLeds_drawPixels(STRANDS, STRANDCNT);
-		delay(20);
-	}
+    for(uint16_t i=0; i<lednums; i++) {
+        STRANDS[0]->pixels[i] = c;
+        digitalLeds_drawPixels(STRANDS, STRANDCNT);
+        delay(20);
+    }
 }
 
 void rainbowCycle(int lednums) {
     uint16_t i, j;
-	for(j=0; j<256*5; j++) { 
+    for(j=0; j<256*5; j++) { 
         // 5 cycles of all colors on wheel
-		if(state!=0){
+        if(state!=0){
             if(reset==1){
                 return;
             }
             reset1 = 0;
-			if(type==3){
+            if(type==3){
                 int blue = (char)color;
-				int green = (char)(color >> 8);
-				int red = (char)(color >> 16);
-				for(i=0; i< lednums; i++) {
-					STRANDS[0]->pixels[i] =  pixelFromRGB(red, green, blue);
+                int green = (char)(color >> 8);
+                int red = (char)(color >> 16);
+                for(i=0; i< lednums; i++) {
+                    STRANDS[0]->pixels[i] =  pixelFromRGB(red, green, blue);
                 }
-			}else{
-				for(i=0; i< lednums; i++) {
-					if(type==1){
-						STRANDS[0]->pixels[i] = Wheel((i+j) & 255);
-					}else if(type==2){
-						STRANDS[0]->pixels[i] = Wheel(((i * 256 / lednums) + j) & 255);
-					}
-				}
-			}
-		    digitalLeds_drawPixels(STRANDS, STRANDCNT);
-		}else{
+            }else{
+                for(i=0; i< lednums; i++) {
+                    if(type==1){
+                        STRANDS[0]->pixels[i] = Wheel((i+j) & 255);
+                    }else if(type==2){
+                        STRANDS[0]->pixels[i] = Wheel(((i * 256 / lednums) + j) & 255);
+                    }
+                }
+            }
+            digitalLeds_drawPixels(STRANDS, STRANDCNT);
+        }else{
             if(reset1 == 0){
                 for(i=0; i< lednums; i++) {
                     STRANDS[0]->pixels[i] =  pixelFromRGBL(0, 0, 0, 0);
@@ -280,29 +308,29 @@ void rainbowCycle(int lednums) {
                 digitalLeds_drawPixels(STRANDS, STRANDCNT);
             }
             reset1 = 1;
-		}
-		delay(delays);
-	}
+        }
+        delay(delays);
+    }
 }
  
 pixelColor_t Wheel(byte WheelPos) {
     WheelPos = 255 - WheelPos;
     if(WheelPos < 85) {
-		return pixelFromRGBL(255 - WheelPos * 3, 0, WheelPos * 3, brightness);
+        return pixelFromRGBL(255 - WheelPos * 3, 0, WheelPos * 3, brightness);
     }
     if(WheelPos < 170) {
         WheelPos -= 85;
-		return pixelFromRGBL(0, WheelPos * 3, 255 - WheelPos * 3, brightness);
+        return pixelFromRGBL(0, WheelPos * 3, 255 - WheelPos * 3, brightness);
 
     }
     WheelPos -= 170;
-	return pixelFromRGBL(WheelPos * 3, 255 - WheelPos * 3, 0, brightness);
+    return pixelFromRGBL(WheelPos * 3, 255 - WheelPos * 3, 0, brightness);
 
 }
 
 
 void http_server(void *clients){
-	for (;;){
+    for (;;){
         if (client.connect(serverIP, serverPort)){
 
             client.printf("{\"TYPE\":\"HS\",\"CID\":\"%04X-%08X\"}",(uint16_t)(chipid>>32),(uint32_t)chipid);
@@ -353,7 +381,6 @@ void http_server(void *clients){
                         }
                     }
 
-
                 }
             }
             client.stop();
@@ -371,6 +398,6 @@ void hb_server(void *clients){
     for (;;){
         delay(5000);
         client.printf("{\"TYPE\":\"STATE\",\"relay\":\"%d\",\"state\":\"%d\",\"type\":\"%d\",\"lednum\":\"%d\",\"delays\":\"%d\",\"brightness\":\"%d\",\"color\":\"%d\"}",relay,state,type,lednum,delays,brightness,color);
-        Serial.printf("{\"TYPE\":\"STATE\",\"relay\":\"%d\",\"state\":\"%d\",\"type\":\"%d\",\"lednum\":\"%d\",\"delays\":\"%d\",\"brightness\":\"%d\",\"color\":\"%d\"}",relay,state,type,lednum,delays,brightness,color);
+        Serial.printf("{\"TYPE\":\"STATE\",\"relay\":\"%d\",\"state\":\"%d\",\"type\":\"%d\",\"lednum\":\"%d\",\"delays\":\"%d\",\"brightness\":\"%d\",\"color\":\"%d\"}\r\n",relay,state,type,lednum,delays,brightness,color);
     }
 }
